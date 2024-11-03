@@ -7,6 +7,17 @@
     let selectedDomain = '';
     let selectedMailbox = '';
     let isLoading = false;
+    let lastCreatedAlias = '';
+
+    async function copyToClipboard(text) {
+        try {
+            await navigator.clipboard.writeText(text);
+            notifications.add('Alias copié dans le presse-papier !', 'success');
+        } catch (error) {
+            console.error('Erreur lors de la copie :', error);
+            notifications.add('Impossible de copier l\'alias', 'error');
+        }
+    }
 
     function cleanDomainName(url) {
         try {
@@ -83,9 +94,18 @@
 
         try {
             await mailcowService.createAlias(aliasName, selectedDomain, selectedMailbox);
-            // Optionnel : reset seulement le nom de l'alias après création
+            // Copie l'alias complet
+            const fullAlias = `${aliasName}@${selectedDomain}`;
+            lastCreatedAlias = fullAlias;
+            await copyToClipboard(fullAlias);
+
+            // Optionnel : ajoute une classe temporaire pour un effet visuel
+            const form = document.querySelector('form');
+            form.classList.add('copied');
+            setTimeout(() => form.classList.remove('copied'), 500);
+
+            // Reset du formulaire
             aliasName = '';
-            // Recharge la liste des alias si tu en as une
         } catch (error) {
             console.error('Error creating alias:', error);
         }
@@ -147,5 +167,18 @@
                 Créer l'alias
             </button>
         </form>
+        {#if lastCreatedAlias}
+            <div class="mt-4 p-4 bg-base-200 rounded-lg flex items-center justify-between">
+                <span class="font-mono">{lastCreatedAlias}</span>
+                <button
+                        class="btn btn-ghost btn-sm"
+                        on:click={() => copyToClipboard(lastCreatedAlias)}
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-2M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
+                    </svg>
+                </button>
+            </div>
+        {/if}
     {/if}
 </div>
