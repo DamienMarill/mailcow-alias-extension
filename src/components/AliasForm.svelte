@@ -1,5 +1,6 @@
 <script>
     import { onMount } from 'svelte';
+    import browser from 'webextension-polyfill';
     import { domains, mailboxes, mailcowService } from '../services/mailcow.service.js';
     import { notifications } from '../services/notification.service.js';
 
@@ -45,10 +46,11 @@
 
     async function getCurrentTab() {
         try {
-            const [tab] = await chrome.tabs.query({
+            const tabs = await browser.tabs.query({
                 active: true,
                 lastFocusedWindow: true
             });
+            const tab = tabs[0];
 
             if (tab?.url) {
                 aliasName = cleanDomainName(tab.url);

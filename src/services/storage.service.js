@@ -1,7 +1,9 @@
 // Service de stockage qui s'adapte à l'environnement
+import browser from 'webextension-polyfill';
+
 class StorageService {
     constructor() {
-        this.storage = chrome?.storage?.local || this.createLocalStorageFallback();
+        this.storage = browser?.storage?.local || this.createLocalStorageFallback();
     }
 
     createLocalStorageFallback() {
@@ -34,6 +36,8 @@ class StorageService {
             return await this.storage.get(keys);
         } catch (error) {
             console.error('Error getting storage:', error);
+            // Fallback to local storage if extension API fails unexpectedly?
+            // Usually not good to mix, but if this.storage was defined but failed...
             return {};
         }
     }
