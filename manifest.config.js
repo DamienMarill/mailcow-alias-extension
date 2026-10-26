@@ -16,6 +16,11 @@ const icons = {
  * @param {string} version
  */
 export function createManifest(target, version) {
+    // Stores only accept 1 to 4 dot-separated integers (no "-beta" suffix).
+    if (!/^\d+(\.\d+){0,3}$/.test(version)) {
+        throw new Error(`Invalid extension version "${version}": use digits and dots only`)
+    }
+
     const manifest = {
         manifest_version: 3,
         name: 'Mailcow Alias Manager',
@@ -27,7 +32,8 @@ export function createManifest(target, version) {
             default_title: 'Créer un alias Mailcow',
             default_icon: icons,
         },
-        permissions: ['storage', 'activeTab', 'clipboardWrite'],
+        // activeTab + scripting: fill the email fields of the current page on demand.
+        permissions: ['storage', 'activeTab', 'scripting', 'clipboardWrite'],
         // Access is requested at runtime for the configured Mailcow server only.
         optional_host_permissions: ['https://*/*', 'http://*/*'],
         commands: {

@@ -6,5 +6,7 @@ export default {
   preprocess: vitePreprocess(),
   compilerOptions: {
     runes: true,
+    // Builds DOM fragments without innerHTML (flagged by the AMO linter).
+    fragments: 'tree',
   },
 }

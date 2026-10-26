@@ -1,3 +1,5 @@
+import { fillEmailFields } from '../content/fill-email-fields.js'
+
 // Cross-browser access to the WebExtension APIs: Firefox exposes the promise
 // based `browser` namespace, Chrome MV3 returns promises from `chrome`.
 // Undefined when the popup is served outside an extension (vite dev server).
@@ -33,13 +35,47 @@ export function requestOriginAccess(url) {
     return ext.permissions.request({ origins: [originPattern(url)] }).catch(() => false)
 }
 
-export async function getActiveTabUrl() {
-    if (!ext?.tabs) return ''
+/** The tab the popup was opened on; its URL is readable thanks to activeTab. */
+export async function getActiveTab() {
+    if (!ext?.tabs) return null
     try {
         const [tab] = await ext.tabs.query({ active: true, currentWindow: true })
-        return tab?.url ?? ''
+        return tab ?? null
     } catch {
-        return ''
+        return null
+    }
+}
+
+/**
+ * Runs fillEmailFields() in every frame of the tab that we can access, then
+ * fills the frame holding the most relevant form only.
+ * @param {number} tabId
+ * @param {string} address
+ * @param {{ dryRun?: boolean }} [options] dryRun: only count the fields
+ * @returns {Promise<number>} number of fields found (dryRun) or filled
+ */
+export async function fillEmailFieldsInTab(tabId, address, { dryRun = false } = {}) {
+    if (!ext?.scripting) return 0
+    try {
+        const scans = await ext.scripting.executeScript({
+            target: { tabId, allFrames: true },
+            func: fillEmailFields,
+            args: [address, true],
+        })
+        const best = scans
+            .filter(scan => scan.result?.score > 0)
+            .sort((a, b) => b.result.score - a.result.score)[0]
+        if (!best || dryRun) return best?.result.count ?? 0
+
+        const [fill] = await ext.scripting.executeScript({
+            target: { tabId, frameIds: [best.frameId] },
+            func: fillEmailFields,
+            args: [address, false],
+        })
+        return fill?.result?.filled ?? 0
+    } catch {
+        // Pages where extensions can't run: browser pages, extension stores…
+        return 0
     }
 }
 

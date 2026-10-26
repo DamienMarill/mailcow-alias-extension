@@ -2,6 +2,8 @@ import { getCredentials } from './settings.service.js';
 import { storageService } from './storage.service.js';
 
 const TIMEOUT_MS = 10000;
+// Lists fetched more recently than this are not refreshed when the popup opens.
+const CACHE_FRESH_MS = 60 * 1000;
 
 // Known Mailcow message keys, see data/web/lang/lang.en-gb.json in mailcow.
 const MESSAGES = {
@@ -81,7 +83,7 @@ export const mailcowService = {
             domains: sorted([domainData].flat().filter(isActive).map(d => d.domain_name).filter(Boolean)),
             mailboxes: sorted([mailboxData].flat().filter(isActive).map(m => m.username).filter(Boolean)),
         };
-        await storageService.set({ listCache: { mailcowUrl, ...lists } });
+        await storageService.set({ listCache: { mailcowUrl, fetchedAt: Date.now(), ...lists } });
         return lists;
     },
 
@@ -89,7 +91,8 @@ export const mailcowService = {
     async getCachedLists() {
         const { mailcowUrl } = getCredentials();
         const { listCache } = await storageService.get(['listCache']);
-        return listCache?.mailcowUrl === mailcowUrl ? listCache : null;
+        if (listCache?.mailcowUrl !== mailcowUrl) return null;
+        return { ...listCache, isFresh: Date.now() - (listCache.fetchedAt ?? 0) < CACHE_FRESH_MS };
     },
 
     /**

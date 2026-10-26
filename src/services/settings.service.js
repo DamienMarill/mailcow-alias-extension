@@ -7,6 +7,9 @@ const DEFAULTS = {
     // Remembered between popups so the usual choice is preselected.
     lastDomain: '',
     lastMailbox: '',
+    suffixEnabled: false,
+    suffixSeparator: '.',
+    autofillEnabled: true,
 };
 
 const KEYS = Object.keys(DEFAULTS);

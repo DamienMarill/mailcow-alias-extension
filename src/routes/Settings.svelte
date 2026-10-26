@@ -4,6 +4,7 @@
     import { notifications } from '../services/notification.service.js';
     import { requestOriginAccess } from '../lib/browser.js';
     import { normalizeServerUrl } from '../lib/url.js';
+    import { SEPARATORS } from '../lib/suffix.js';
 
     let { onDone } = $props();
 
@@ -48,47 +49,48 @@
             isSaving = false;
         }
     }
+
+    /** Preferences are applied as soon as they change. */
+    function savePreference(values) {
+        settings.save(values).catch(() => notifications.error('Impossible d\'enregistrer la préférence'));
+    }
 </script>
 
 <div class="p-4">
     {#if isFirstRun}
-        <p class="mb-4 text-sm">
+        <p class="mb-2 text-sm">
             Bienvenue ! Renseigne ton serveur Mailcow pour créer des alias en un clic.
         </p>
     {/if}
 
-    <form onsubmit={handleSubmit} class="space-y-3">
-        <label class="form-control">
-            <div class="label pt-0">
-                <span class="label-text">URL Mailcow</span>
-            </div>
+    <form onsubmit={handleSubmit}>
+        <fieldset class="fieldset">
+            <legend class="fieldset-legend">URL Mailcow</legend>
             <input
                 type="text"
                 inputmode="url"
                 bind:value={mailcowUrl}
                 placeholder="mail.example.com"
-                class="input input-bordered w-full"
+                class="input w-full"
+                aria-label="URL Mailcow"
                 autocomplete="url"
                 spellcheck="false"
                 required
             />
             {#if isInsecure}
-                <div class="label">
-                    <span class="label-text-alt text-warning">HTTP non chiffré : ta clé API circulera en clair.</span>
-                </div>
+                <p class="label text-warning">HTTP non chiffré : ta clé API circulera en clair.</p>
             {/if}
-        </label>
+        </fieldset>
 
-        <label class="form-control">
-            <div class="label pt-0">
-                <span class="label-text">Clé API</span>
-            </div>
+        <fieldset class="fieldset">
+            <legend class="fieldset-legend">Clé API</legend>
             <div class="join w-full">
                 <input
                     type={showKey ? 'text' : 'password'}
                     bind:value={apiKey}
                     placeholder="XXXXXX-XXXXXX-XXXXXX-XXXXXX-XXXXXX"
-                    class="input input-bordered join-item min-w-0 flex-1 font-mono"
+                    class="input join-item min-w-0 flex-1 font-mono"
+                    aria-label="Clé API"
                     autocomplete="off"
                     spellcheck="false"
                     required
@@ -102,18 +104,60 @@
                     {showKey ? 'Masquer' : 'Afficher'}
                 </button>
             </div>
-            <div class="label">
-                <span class="label-text-alt">
-                    Clé <strong>lecture/écriture</strong> : Mailcow → Système → Configuration → Accès → API.
-                </span>
-            </div>
-        </label>
+            <p class="label whitespace-normal">
+                Clé lecture/écriture : Mailcow → Système → Configuration → Accès → API.
+            </p>
+        </fieldset>
 
-        <button class="btn btn-primary w-full" disabled={isSaving}>
+        <button class="btn btn-primary mt-3 w-full" disabled={isSaving}>
             {#if isSaving}
                 <span class="loading loading-spinner loading-sm"></span>
             {/if}
             Enregistrer et tester
         </button>
     </form>
+
+    {#if !isFirstRun}
+        <fieldset class="fieldset mt-4 rounded-box border border-base-300 p-3">
+            <legend class="fieldset-legend">Préférences</legend>
+
+            <label class="label cursor-pointer justify-between whitespace-normal text-base-content">
+                Remplir les champs email de la page
+                <input
+                    type="checkbox"
+                    class="toggle toggle-sm toggle-primary"
+                    checked={$settings.autofillEnabled}
+                    onchange={(e) => savePreference({ autofillEnabled: e.currentTarget.checked })}
+                />
+            </label>
+
+            <label class="label mt-2 cursor-pointer justify-between whitespace-normal text-base-content">
+                Ajouter un suffixe aléatoire
+                <input
+                    type="checkbox"
+                    class="toggle toggle-sm toggle-primary"
+                    checked={$settings.suffixEnabled}
+                    onchange={(e) => savePreference({ suffixEnabled: e.currentTarget.checked })}
+                />
+            </label>
+            <div class="mt-1 flex items-center justify-between gap-2">
+                <span class="text-xs opacity-70">
+                    Séparateur : amazon<strong>{$settings.suffixSeparator}</strong>k3x9q
+                </span>
+                <select
+                    class="select select-sm w-20"
+                    value={$settings.suffixSeparator}
+                    onchange={(e) => savePreference({ suffixSeparator: e.currentTarget.value })}
+                    aria-label="Séparateur du suffixe"
+                >
+                    {#each SEPARATORS as separator (separator)}
+                        <option value={separator}>{separator}</option>
+                    {/each}
+                </select>
+            </div>
+            <p class="label mt-1 whitespace-normal">
+                Un suffixe rend l'alias impossible à deviner pour un spammeur. Le bouton dé l'ajoute à la demande.
+            </p>
+        </fieldset>
+    {/if}
 </div>

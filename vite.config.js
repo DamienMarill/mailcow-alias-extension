@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { defineConfig } from 'vite'
 import { svelte } from '@sveltejs/vite-plugin-svelte'
+import tailwindcss from '@tailwindcss/vite'
 import { createManifest } from './manifest.config.js'
 
 const TARGETS = ['chrome', 'firefox']
@@ -28,7 +29,10 @@ export default defineConfig(({ mode }) => {
 
     return {
         base: './',
-        plugins: [svelte(), webExtensionManifest(target)],
+        plugins: [svelte(), tailwindcss(), webExtensionManifest(target)],
+        test: {
+            include: ['src/**/*.test.js'],
+        },
         build: {
             outDir: `dist/${target}`,
             emptyOutDir: true,

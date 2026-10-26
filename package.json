@@ -1,7 +1,7 @@
 {
   "name": "mailcow-alias-extension",
   "private": true,
-  "version": "1.1.0",
+  "version": "1.2.0",
   "type": "module",
   "scripts": {
     "build": "npm run build:chrome && npm run build:firefox",
@@ -12,17 +12,21 @@
     "start:firefox": "web-ext run --source-dir dist/firefox",
     "lint:firefox": "npm run build:firefox && web-ext lint --source-dir dist/firefox",
     "check": "svelte-check",
-    "zip": "npm run build && web-ext build -s dist/chrome -a release -n mailcow-alias-{version}-chrome.zip -o && web-ext build -s dist/firefox -a release -n mailcow-alias-{version}-firefox.zip -o"
+    "zip": "npm run build && web-ext build -s dist/chrome -a release -n mailcow-alias-{version}-chrome.zip -o && web-ext build -s dist/firefox -a release -n mailcow-alias-{version}-firefox.zip -o",
+    "test": "vitest run"
   },
   "devDependencies": {
-    "@sveltejs/vite-plugin-svelte": "^4.0.0",
-    "autoprefixer": "^10.4.20",
-    "daisyui": "^4.12.13",
-    "postcss": "^8.4.47",
-    "svelte": "^5.0.3",
+    "@sveltejs/vite-plugin-svelte": "^7.3.1",
+    "@tailwindcss/vite": "^4.3.3",
+    "daisyui": "^5.7.50",
+    "svelte": "^5.57.2",
     "svelte-check": "^4.7.7",
-    "tailwindcss": "^3.4.14",
-    "vite": "^5.4.9",
+    "tailwindcss": "^4.3.3",
+    "vite": "^8.3.5",
+    "vitest": "^5.0.5",
     "web-ext": "^10.8.0"
+  },
+  "engines": {
+    "node": ">=22.12"
   }
 }

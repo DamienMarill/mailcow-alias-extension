@@ -3,7 +3,7 @@
 </script>
 
 <header class="navbar min-h-0 bg-base-200 px-3 py-2">
-    <div class="flex-1 items-center gap-2">
+    <div class="flex flex-1 items-center gap-2">
         <img src="icons/icon48.png" alt="" class="h-7 w-7 rounded">
         <span class="font-semibold">Mailcow Alias</span>
     </div>

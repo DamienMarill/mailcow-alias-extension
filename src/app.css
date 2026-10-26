@@ -1,6 +1,9 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+@plugin "daisyui" {
+    /* Follows the browser/OS color scheme. */
+    themes: light --default, dark --prefersdark;
+    logs: false;
+}
 
 /* Popup size: Chrome and Firefox both size the popup to the body. */
 body {

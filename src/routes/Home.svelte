@@ -29,6 +29,7 @@
             status = 'needs-access';
             return;
         }
+        if (cached?.isFresh) return;
 
         refreshing = true;
         try {
