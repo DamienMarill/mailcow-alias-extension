@@ -1,58 +1,27 @@
-// Service de stockage qui s'adapte à l'environnement
-class StorageService {
-    constructor() {
-        this.storage = chrome?.storage?.local || this.createLocalStorageFallback();
-    }
+import { ext } from '../lib/browser.js';
 
-    createLocalStorageFallback() {
-        return {
-            get: async (keys) => {
-                const result = {};
-                for (const key of Array.isArray(keys) ? keys : [keys]) {
-                    result[key] = localStorage.getItem(key);
-                    try {
-                        result[key] = JSON.parse(result[key]);
-                    } catch {
-                        // Si ce n'est pas du JSON, on garde la valeur telle quelle
-                    }
-                }
-                return result;
-            },
-            set: async (items) => {
-                for (const [key, value] of Object.entries(items)) {
-                    localStorage.setItem(key, JSON.stringify(value));
-                }
-            },
-            clear: async () => {
-                localStorage.clear();
-            }
-        };
-    }
-
+// localStorage fallback keeps the popup usable on the vite dev server.
+const localStorageArea = {
     async get(keys) {
-        try {
-            return await this.storage.get(keys);
-        } catch (error) {
-            console.error('Error getting storage:', error);
-            return {};
+        const result = {};
+        for (const key of keys) {
+            const raw = localStorage.getItem(key);
+            if (raw !== null) result[key] = JSON.parse(raw);
         }
-    }
-
+        return result;
+    },
     async set(items) {
-        try {
-            await this.storage.set(items);
-        } catch (error) {
-            console.error('Error setting storage:', error);
+        for (const [key, value] of Object.entries(items)) {
+            localStorage.setItem(key, JSON.stringify(value));
         }
-    }
+    },
+};
 
-    async clear() {
-        try {
-            await this.storage.clear();
-        } catch (error) {
-            console.error('Error clearing storage:', error);
-        }
-    }
-}
+const area = ext?.storage?.local ?? localStorageArea;
 
-export const storageService = new StorageService();
+export const storageService = {
+    /** @param {string[]} keys */
+    get: (keys) => area.get(keys),
+    /** @param {Record<string, unknown>} items */
+    set: (items) => area.set(items),
+};

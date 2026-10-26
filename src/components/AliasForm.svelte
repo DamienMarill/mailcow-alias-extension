@@ -1,184 +1,155 @@
 <script>
     import { onMount } from 'svelte';
-    import { domains, mailboxes, mailcowService } from '../services/mailcow.service.js';
+    import { settings } from '../services/settings.service.js';
+    import { mailcowService } from '../services/mailcow.service.js';
     import { notifications } from '../services/notification.service.js';
+    import { copyText, fillEmailFieldsInTab } from '../lib/browser.js';
+    import { sanitizeLocalPart } from '../lib/url.js';
+    import { addRandomSuffix } from '../lib/suffix.js';
+    import { siteComment } from '../lib/site.js';
+    import { pickOption } from '../lib/pick.js';
+    import { fieldsLabel } from '../lib/feedback.js';
 
-    let aliasName = '';
-    let selectedDomain = '';
-    let selectedMailbox = '';
-    let isLoading = false;
-    let lastCreatedAlias = '';
+    /**
+     * @type {{
+     *   domains: string[], mailboxes: string[], refreshing: boolean,
+     *   tabId: number | null, site: import('../lib/site.js').Site | null,
+     *   onCreated: (address: string) => void,
+     * }}
+     */
+    let { domains, mailboxes, refreshing, tabId, site, onCreated } = $props();
 
-    async function copyToClipboard(text) {
-        try {
-            await navigator.clipboard.writeText(text);
-            notifications.add('Alias copié dans le presse-papier !', 'success');
-        } catch (error) {
-            console.error('Erreur lors de la copie :', error);
-            notifications.add('Impossible de copier l\'alias', 'error');
-        }
+    let localPart = $state('');
+    let domain = $state('');
+    let mailbox = $state('');
+    let isSubmitting = $state(false);
+    /** Email fields detected on the page, filled along with the creation. */
+    let fieldCount = $state(0);
+    let lastSuffix = '';
+    /** @type {HTMLInputElement} */
+    let aliasInput;
+
+    const address = $derived(`${sanitizeLocalPart(localPart)}@${domain}`);
+    const canSubmit = $derived(!!sanitizeLocalPart(localPart) && !!domain && !!mailbox && !isSubmitting);
+    const canFill = $derived(tabId !== null && $settings.autofillEnabled);
+
+    // Keeps a valid selection, preferring the current then the last one used.
+    $effect(() => {
+        domain = pickOption(domains, domain, $settings.lastDomain);
+    });
+    $effect(() => {
+        mailbox = pickOption(mailboxes, mailbox, $settings.lastMailbox);
+    });
+
+    function rollSuffix() {
+        ({ value: localPart, suffix: lastSuffix } = addRandomSuffix(localPart.trim(), $settings.suffixSeparator, lastSuffix));
+        aliasInput.focus();
     }
 
-    function cleanDomainName(url) {
-        try {
-            const hostname = new URL(url).hostname;
-
-            // Enlève le www. s'il existe
-            let cleanedDomain = hostname.replace(/^www\./, '');
-
-            // Enlève le TLD (dernière partie)
-            const parts = cleanedDomain.split('.');
-            parts.pop(); // Enlève le TLD
-
-            // Rejoins les parties restantes avec des points
-            cleanedDomain = parts.join('.');
-
-            // Nettoie les caractères spéciaux sauf les points
-            return cleanedDomain
-                .replace(/[^a-z0-9.]/gi, '') // Garde les lettres, chiffres et points
-                .toLowerCase(); // Force en minuscules
-        } catch (error) {
-            console.error('Error parsing URL:', error);
-            return '';
+    onMount(async () => {
+        if (site) {
+            localPart = site.name;
+            if ($settings.suffixEnabled) rollSuffix();
         }
-    }
+        // Selected so the user can either confirm with Enter or type over it.
+        aliasInput.focus();
+        aliasInput.select();
 
-    async function getCurrentTab() {
+        if (canFill) fieldCount = await fillEmailFieldsInTab(tabId, '', { dryRun: true });
+    });
+
+    async function handleSubmit(event) {
+        event.preventDefault();
+        if (!canSubmit) return;
+
+        isSubmitting = true;
+        const created = address;
         try {
-            const [tab] = await chrome.tabs.query({
-                active: true,
-                lastFocusedWindow: true
-            });
+            await mailcowService.createAlias(created, mailbox, { comment: site ? siteComment(site) : '' });
+            settings.save({ lastDomain: domain, lastMailbox: mailbox }).catch(() => {});
+            localPart = '';
+            lastSuffix = '';
 
-            if (tab?.url) {
-                aliasName = cleanDomainName(tab.url);
-                // Optionnel : ajouter un suffixe aléatoire pour plus d'unicité
-                // aliasName += Math.floor(Math.random() * 1000);
-            }
+            const filled = canFill ? await fillEmailFieldsInTab(tabId, created) : 0;
+            const copied = await copyText(created);
+            const done = [filled && `rempli dans ${fieldsLabel(filled)}`, copied && 'copié'].filter(Boolean);
+            notifications.success(done.length === 2
+                ? `Alias créé, ${done.join(' et ')} !`
+                : `Alias créé${done.length ? ` et ${done[0]}` : ''} !${copied ? '' : ' (copie impossible, utilise le bouton)'}`);
+            onCreated(created);
         } catch (error) {
-            console.error('Error getting current tab:', error);
-            notifications.add('Impossible de récupérer l\'URL du site', 'error');
-        }
-    }
-
-    async function loadData() {
-        isLoading = true;
-        try {
-            await Promise.all([
-                mailcowService.loadDomains(),
-                mailcowService.loadMailboxes(),
-                getCurrentTab()
-            ]);
-
-            // Sélectionne le premier domaine par défaut
-            if ($domains.length > 0 && !selectedDomain) {
-                selectedDomain = $domains[0];
-            }
-
-            // Optionnel : Sélectionne la première boîte mail par défaut
-            if ($mailboxes.length > 0 && !selectedMailbox) {
-                selectedMailbox = $mailboxes[0];
-            }
-        } catch (error) {
-            notifications.add('Erreur lors du chargement des données', 'error');
+            notifications.error(error.message);
         } finally {
-            isLoading = false;
+            isSubmitting = false;
+            aliasInput.focus();
         }
     }
-
-    async function handleSubmit() {
-        if (!aliasName || !selectedDomain || !selectedMailbox) {
-            notifications.add('Veuillez remplir tous les champs', 'error');
-            return;
-        }
-
-        try {
-            await mailcowService.createAlias(aliasName, selectedDomain, selectedMailbox);
-            // Copie l'alias complet
-            const fullAlias = `${aliasName}@${selectedDomain}`;
-            lastCreatedAlias = fullAlias;
-            await copyToClipboard(fullAlias);
-
-            // Optionnel : ajoute une classe temporaire pour un effet visuel
-            const form = document.querySelector('form');
-            form.classList.add('copied');
-            setTimeout(() => form.classList.remove('copied'), 500);
-
-            // Reset du formulaire
-            aliasName = '';
-        } catch (error) {
-            console.error('Error creating alias:', error);
-        }
-    }
-
-    onMount(loadData);
 </script>
 
-<div class="p-4">
-    {#if isLoading}
-        <div class="flex justify-center p-4">
-            <span class="loading loading-spinner loading-md"></span>
-        </div>
-    {:else}
-        <form on:submit|preventDefault={handleSubmit} class="space-y-4">
-            <div class="flex items-center gap-2">
-                <div class="form-control flex-1">
-                    <input
-                            type="text"
-                            bind:value={aliasName}
-                            placeholder="alias"
-                            class="input input-bordered w-full"
-                            required
-                    />
-                </div>
-                <span class="text-lg">@</span>
-                <div class="form-control flex-1">
-                    <select
-                            bind:value={selectedDomain}
-                            class="select select-bordered w-full"
-                            required
-                    >
-                        <option value="">Domaine</option>
-                        {#each $domains as domain}
-                            <option value={domain}>{domain}</option>
-                        {/each}
-                    </select>
-                </div>
-            </div>
-
-            <div class="form-control">
-                <select
-                        bind:value={selectedMailbox}
-                        class="select select-bordered w-full"
-                        required
-                >
-                    <option value="">Boîte mail</option>
-                    {#each $mailboxes as mailbox}
-                        <option value={mailbox}>{mailbox}</option>
-                    {/each}
-                </select>
-            </div>
-
-            <button
-                    type="submit"
-                    class="btn btn-primary w-full"
-                    disabled={!aliasName || !selectedDomain || !selectedMailbox}
-            >
-                Créer l'alias
-            </button>
-        </form>
-        {#if lastCreatedAlias}
-            <div class="mt-4 p-4 bg-base-200 rounded-lg flex items-center justify-between">
-                <span class="font-mono">{lastCreatedAlias}</span>
+<form onsubmit={handleSubmit}>
+    <fieldset class="fieldset">
+        <legend class="fieldset-legend">
+            Alias
+            {#if refreshing}
+                <span class="loading loading-spinner loading-xs" title="Actualisation…"></span>
+            {/if}
+        </legend>
+        <div class="join w-full">
+            <label class="input join-item min-w-0 flex-1 pr-1">
+                <input
+                    bind:this={aliasInput}
+                    bind:value={localPart}
+                    type="text"
+                    placeholder="nom-du-site"
+                    class="min-w-0 grow"
+                    aria-label="Alias"
+                    autocomplete="off"
+                    spellcheck="false"
+                    required
+                />
                 <button
-                        class="btn btn-ghost btn-sm"
-                        on:click={() => copyToClipboard(lastCreatedAlias)}
+                    type="button"
+                    class="btn btn-ghost btn-xs btn-square"
+                    onclick={rollSuffix}
+                    aria-label="Ajouter un suffixe aléatoire"
+                    title="Suffixe aléatoire"
                 >
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-2M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <rect x="4" y="4" width="16" height="16" rx="3" />
+                        <circle cx="9" cy="9" r="1" fill="currentColor" />
+                        <circle cx="15" cy="15" r="1" fill="currentColor" />
+                        <circle cx="15" cy="9" r="1" fill="currentColor" />
+                        <circle cx="9" cy="15" r="1" fill="currentColor" />
                     </svg>
                 </button>
-            </div>
+            </label>
+            <span class="join-item flex items-center border border-base-content/20 bg-base-200 px-2">@</span>
+            <select bind:value={domain} class="select join-item w-auto min-w-0 max-w-[45%]" aria-label="Domaine">
+                {#each domains as option (option)}
+                    <option value={option}>{option}</option>
+                {/each}
+            </select>
+        </div>
+    </fieldset>
+
+    <fieldset class="fieldset">
+        <legend class="fieldset-legend">Redirigé vers</legend>
+        <select bind:value={mailbox} class="select w-full" aria-label="Boîte de destination">
+            {#each mailboxes as option (option)}
+                <option value={option}>{option}</option>
+            {/each}
+        </select>
+    </fieldset>
+
+    <button type="submit" class="btn btn-primary mt-3 w-full" disabled={!canSubmit}>
+        {#if isSubmitting}
+            <span class="loading loading-spinner loading-sm"></span>
         {/if}
+        Créer l'alias
+    </button>
+    {#if canFill && fieldCount > 0}
+        <p class="mt-2 text-center text-xs opacity-70">
+            Sera aussi rempli dans {fieldsLabel(fieldCount)} de la page.
+        </p>
     {/if}
-</div>
+</form>

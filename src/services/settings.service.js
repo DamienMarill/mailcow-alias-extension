@@ -1,34 +1,37 @@
-import {writable, derived, get} from 'svelte/store';
+import { writable, derived, get } from 'svelte/store';
 import { storageService } from './storage.service.js';
 
-// Stores pour les settings
+const DEFAULTS = {
+    mailcowUrl: '',
+    apiKey: '',
+    // Remembered between popups so the usual choice is preselected.
+    lastDomain: '',
+    lastMailbox: '',
+    suffixEnabled: false,
+    suffixSeparator: '.',
+    autofillEnabled: true,
+};
+
+const KEYS = Object.keys(DEFAULTS);
+
 const createSettingsStore = () => {
-    const { subscribe, set, update } = writable({
-        mailcowUrl: '',
-        apiKey: ''
-    });
+    const { subscribe, set, update } = writable({ ...DEFAULTS });
 
     return {
         subscribe,
         async init() {
-            const data = await storageService.get(['mailcowUrl', 'apiKey']);
-            set({
-                mailcowUrl: data.mailcowUrl || '',
-                apiKey: data.apiKey || ''
-            });
+            const data = await storageService.get(KEYS);
+            set({ ...DEFAULTS, ...data });
         },
-        async setMailcowUrl(url) {
-            await storageService.set({ mailcowUrl: url });
-            update(s => ({ ...s, mailcowUrl: url }));
+        /**
+         * The storage write starts synchronously, so this can be called
+         * right before permissions.request() in a click handler.
+         * @param {Partial<typeof DEFAULTS>} values
+         */
+        save(values) {
+            update(s => ({ ...s, ...values }));
+            return storageService.set(values);
         },
-        async setApiKey(key) {
-            await storageService.set({ apiKey: key });
-            update(s => ({ ...s, apiKey: key }));
-        },
-        async clear() {
-            await storageService.clear();
-            set({ mailcowUrl: '', apiKey: '' });
-        }
     };
 };
 
@@ -40,9 +43,9 @@ export const isConfigured = derived(
 );
 
 export function getCredentials() {
-    const currentSettings = get(settings);
-    if (!currentSettings.mailcowUrl || !currentSettings.apiKey) {
+    const { mailcowUrl, apiKey } = get(settings);
+    if (!mailcowUrl || !apiKey) {
         throw new Error('Configuration manquante');
     }
-    return currentSettings;
+    return { mailcowUrl, apiKey };
 }

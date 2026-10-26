@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="fr">
+<body>
+    <input type="search" name="q" placeholder="Rechercher">
+    <input type="email" name="hidden" style="display: none">
+    <!-- No <form>: grouped as a formless form. -->
+    <div class="signup">
+        <input name="mail" placeholder="Adresse e-mail">
+        <input name="mail2" placeholder="Confirmez votre e-mail">
+        <input type="password">
+        <input name="nick" autocomplete="username">
+    </div>
+    <script>
+        const log = []
+        for (const input of document.querySelectorAll('input')) {
+            for (const type of ['focus', 'focusin', 'keydown', 'keypress', 'input', 'keyup', 'change', 'blur', 'focusout']) {
+                input.addEventListener(type, () => log.push(`${input.name}:${type}`))
+            }
+        }
+        window.eventLog = log
+    </script>
+</body>
+</html>

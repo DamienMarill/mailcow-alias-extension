@@ -22,3 +22,11 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Packaged extensions
+release
+
+# End-to-end tests
+tests/e2e/.fixtures
+test-results
+playwright-report

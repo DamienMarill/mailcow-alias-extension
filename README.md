@@ -1,47 +1,87 @@
-# Svelte + Vite
+# Mailcow Alias Manager
 
-This template should help get you started developing with Svelte in Vite.
+Extension Chrome / Firefox pour créer en un clic un alias [Mailcow](https://mailcow.email/) à partir du site courant
+(`https://www.amazon.fr` → `amazon@ton-domaine.fr`), puis le copier dans le presse-papier.
 
-## Recommended IDE Setup
+- Alias proposé à partir du site ouvert, sélectionné pour être confirmé avec <kbd>Entrée</kbd> ou remplacé.
+- Suffixe aléatoire optionnel (`amazon.k3x9q`) pour des alias impossibles à deviner, ou à la demande avec le bouton dé.
+- Remplissage des champs « email » / « confirmer l'email » de la page, compatible React, Vue, Angular, Shadow DOM
+  et iframes (le formulaire d'inscription passe avant la newsletter du pied de page).
+- Liste des alias déjà créés pour le site (par nom ou par commentaire) : copier, remplir la page,
+  désactiver/réactiver ou supprimer.
+- Chaque alias garde en commentaire privé Mailcow le site pour lequel il a été créé : le jour où il reçoit
+  du spam, tu sais qui a fuité.
+- Clic droit sur un champ → « Créer un alias Mailcow ici » : alias créé avec tes choix habituels et
+  champ rempli, sans ouvrir le popup (suffixe ajouté automatiquement si le nom est déjà pris).
+- Domaine et boîte de destination mémorisés d'une utilisation à l'autre.
+- Listes mises en cache : le popup s'affiche tout de suite et se rafraîchit en arrière-plan.
+- Erreurs Mailcow lisibles (alias déjà existant, clé API refusée, serveur injoignable…).
+- Raccourci clavier <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>M</kbd> (modifiable dans les réglages de raccourcis du navigateur).
+- Thème clair/sombre selon le système.
 
-[VS Code](https://code.visualstudio.com/) + [Svelte](https://marketplace.visualstudio.com/items?itemName=svelte.svelte-vscode).
+## Configuration Mailcow
 
-## Need an official Svelte framework?
+Il faut une **clé API en lecture/écriture** : Mailcow → Système → Configuration → Accès → API.
+Cette clé donne un accès administrateur complet au serveur : limite les IP autorisées quand c'est possible.
 
-Check out [SvelteKit](https://github.com/sveltejs/kit#readme), which is also powered by Vite. Deploy anywhere with its serverless-first approach and adapt to various platforms, with out of the box support for TypeScript, SCSS, and Less, and easily-added support for mdsvex, GraphQL, PostCSS, Tailwind CSS, and more.
+## Permissions
 
-## Technical considerations
+| Permission | Pourquoi |
+|---|---|
+| accès au serveur Mailcow | demandé à l'enregistrement des paramètres, **pour ce seul serveur** |
+| `activeTab` + `scripting` | lire l'URL du site et remplir ses champs, uniquement quand tu ouvres le popup ou utilises le menu |
+| `contextMenus` | entrée « Créer un alias Mailcow ici » du clic droit |
+| `clipboardWrite` | copier l'alias même après l'appel à l'API |
+| `storage` | paramètres et préférences |
 
-**Why use this over SvelteKit?**
+## Développement
 
-- It brings its own routing solution which might not be preferable for some users.
-- It is first and foremost a framework that just happens to use Vite under the hood, not a Vite app.
+Prérequis : Node.js 22.12+.
 
-This template contains as little as possible to get started with Vite + Svelte, while taking into account the developer experience with regards to HMR and intellisense. It demonstrates capabilities on par with the other `create-vite` templates and is a good starting point for beginners dipping their toes into a Vite + Svelte project.
-
-Should you later need the extended capabilities and extensibility provided by SvelteKit, the template has been structured similarly to SvelteKit so that it is easy to migrate.
-
-**Why `global.d.ts` instead of `compilerOptions.types` inside `jsconfig.json` or `tsconfig.json`?**
-
-Setting `compilerOptions.types` shuts out all other types not explicitly listed in the configuration. Using triple-slash references keeps the default TypeScript setting of accepting type information from the entire workspace, while also adding `svelte` and `vite/client` type information.
-
-**Why include `.vscode/extensions.json`?**
-
-Other templates indirectly recommend extensions via the README, but this file allows VS Code to prompt the user to install the recommended extension upon opening the project.
-
-**Why enable `checkJs` in the JS template?**
-
-It is likely that most cases of changing variable types in runtime are likely to be accidental, rather than deliberate. This provides advanced typechecking out of the box. Should you like to take advantage of the dynamically-typed nature of JavaScript, it is trivial to change the configuration.
-
-**Why is HMR not preserving my local component state?**
-
-HMR state preservation comes with a number of gotchas! It has been disabled by default in both `svelte-hmr` and `@sveltejs/vite-plugin-svelte` due to its often surprising behavior. You can read the details [here](https://github.com/sveltejs/svelte-hmr/tree/master/packages/svelte-hmr#preservation-of-local-state).
-
-If you have state that's important to retain within a component, consider creating an external store which would not be replaced by HMR.
-
-```js
-// store.js
-// An extremely simple external store
-import { writable } from 'svelte/store'
-export default writable(0)
+```bash
+npm install
+npm run dev:chrome     # build en watch dans dist/chrome
+npm run dev:firefox    # build en watch dans dist/firefox
+npm run start:firefox  # lance un Firefox de test avec l'extension (à côté de dev:firefox)
+npm run check          # vérification des types (svelte-check)
+npm test               # tests unitaires (Vitest)
+npm run test:e2e       # tests de bout en bout (Playwright + Chromium, faux serveur Mailcow)
 ```
+
+Les tests E2E tournent sur un build dédié (`vite build --mode e2e` → `dist/e2e`) qui pré-autorise
+`http://localhost` et expose le handler du menu contextuel (impossible à cliquer depuis Playwright).
+Première fois : `npx playwright install chromium`.
+
+Charger l'extension :
+
+- **Chrome** : `chrome://extensions` → Mode développeur → « Charger l'extension non empaquetée » → `dist/chrome`.
+- **Firefox** : `about:debugging#/runtime/this-firefox` → « Charger un module temporaire » → `dist/firefox/manifest.json`
+  (ou `npm run start:firefox`).
+
+## Build et publication
+
+```bash
+npm run build          # dist/chrome et dist/firefox
+npm run lint:firefox   # validation AMO (web-ext lint)
+npm run zip            # release/mailcow-alias-<version>-{chrome,firefox}.zip
+```
+
+La version vient de `package.json`, le manifest est généré par `manifest.config.js` pour chaque navigateur.
+
+- **Chrome Web Store** : envoyer `release/*-chrome.zip`.
+- **Firefox (AMO)** : envoyer `release/*-firefox.zip`. Le code étant bundlé, AMO demande aussi les sources
+  (une archive du dépôt suffit, avec ces instructions de build). L'ID Gecko (`manifest.config.js`) ne doit plus
+  changer une fois l'extension publiée.
+
+### Release automatique
+
+Changer la version sur `main` suffit :
+
+```bash
+npm version minor      # met à jour package.json et package-lock.json (sans tag local)
+git commit -am "build: v1.3.0" && git push
+```
+
+Le workflow `CI` (types, tests unitaires, build, lint AMO, tests E2E) tourne sur chaque PR et sur `main`.
+Quand il est vert sur `main`, le workflow `Release` crée le tag `v1.3.0` et une release GitHub avec les
+deux zips, s'il n'existe pas encore de release pour cette version.
