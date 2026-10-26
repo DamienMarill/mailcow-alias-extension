@@ -4,21 +4,25 @@
   "version": "1.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
+    "build": "npm run build:chrome && npm run build:firefox",
+    "build:chrome": "vite build --mode chrome",
+    "build:firefox": "vite build --mode firefox",
+    "dev:chrome": "vite build --mode chrome --watch",
+    "dev:firefox": "vite build --mode firefox --watch",
+    "start:firefox": "web-ext run --source-dir dist/firefox",
+    "lint:firefox": "npm run build:firefox && web-ext lint --source-dir dist/firefox",
+    "check": "svelte-check",
+    "zip": "npm run build && web-ext build -s dist/chrome -a release -n mailcow-alias-{version}-chrome.zip -o && web-ext build -s dist/firefox -a release -n mailcow-alias-{version}-firefox.zip -o"
   },
   "devDependencies": {
-    "@crxjs/vite-plugin": "^2.0.0-beta.28",
     "@sveltejs/vite-plugin-svelte": "^4.0.0",
     "autoprefixer": "^10.4.20",
     "daisyui": "^4.12.13",
     "postcss": "^8.4.47",
     "svelte": "^5.0.3",
+    "svelte-check": "^4.7.7",
     "tailwindcss": "^3.4.14",
-    "vite": "^5.4.9"
-  },
-  "dependencies": {
-    "svelte-spa-router": "^4.0.1"
+    "vite": "^5.4.9",
+    "web-ext": "^10.8.0"
   }
 }

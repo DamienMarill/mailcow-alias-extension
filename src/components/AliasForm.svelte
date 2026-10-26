@@ -1,184 +1,142 @@
 <script>
     import { onMount } from 'svelte';
-    import { domains, mailboxes, mailcowService } from '../services/mailcow.service.js';
+    import { settings } from '../services/settings.service.js';
+    import { mailcowService } from '../services/mailcow.service.js';
     import { notifications } from '../services/notification.service.js';
+    import { copyText, getActiveTabUrl } from '../lib/browser.js';
+    import { aliasFromUrl, sanitizeLocalPart } from '../lib/url.js';
 
-    let aliasName = '';
-    let selectedDomain = '';
-    let selectedMailbox = '';
-    let isLoading = false;
-    let lastCreatedAlias = '';
+    /** @type {{ domains: string[], mailboxes: string[], refreshing: boolean }} */
+    let { domains, mailboxes, refreshing } = $props();
 
-    async function copyToClipboard(text) {
-        try {
-            await navigator.clipboard.writeText(text);
-            notifications.add('Alias copié dans le presse-papier !', 'success');
-        } catch (error) {
-            console.error('Erreur lors de la copie :', error);
-            notifications.add('Impossible de copier l\'alias', 'error');
-        }
+    let localPart = $state('');
+    let domain = $state('');
+    let mailbox = $state('');
+    let isSubmitting = $state(false);
+    let lastCreated = $state('');
+    let justCopied = $state(false);
+    /** @type {HTMLInputElement} */
+    let aliasInput;
+
+    const address = $derived(`${sanitizeLocalPart(localPart)}@${domain}`);
+    const canSubmit = $derived(!!sanitizeLocalPart(localPart) && !!domain && !!mailbox && !isSubmitting);
+
+    /** Keeps a valid selection, preferring the last one used. */
+    function pick(current, options, remembered) {
+        if (options.includes(current)) return current;
+        if (options.includes(remembered)) return remembered;
+        return options[0] ?? '';
     }
 
-    function cleanDomainName(url) {
-        try {
-            const hostname = new URL(url).hostname;
+    $effect(() => {
+        domain = pick(domain, domains, $settings.lastDomain);
+    });
+    $effect(() => {
+        mailbox = pick(mailbox, mailboxes, $settings.lastMailbox);
+    });
 
-            // Enlève le www. s'il existe
-            let cleanedDomain = hostname.replace(/^www\./, '');
+    onMount(async () => {
+        const suggestion = aliasFromUrl(await getActiveTabUrl());
+        if (!localPart) localPart = suggestion;
+        // Selected so the user can either confirm with Enter or type over it.
+        aliasInput.focus();
+        aliasInput.select();
+    });
 
-            // Enlève le TLD (dernière partie)
-            const parts = cleanedDomain.split('.');
-            parts.pop(); // Enlève le TLD
-
-            // Rejoins les parties restantes avec des points
-            cleanedDomain = parts.join('.');
-
-            // Nettoie les caractères spéciaux sauf les points
-            return cleanedDomain
-                .replace(/[^a-z0-9.]/gi, '') // Garde les lettres, chiffres et points
-                .toLowerCase(); // Force en minuscules
-        } catch (error) {
-            console.error('Error parsing URL:', error);
-            return '';
-        }
+    async function copy(text) {
+        justCopied = await copyText(text);
+        if (justCopied) setTimeout(() => (justCopied = false), 1500);
+        return justCopied;
     }
 
-    async function getCurrentTab() {
+    async function handleSubmit(event) {
+        event.preventDefault();
+        if (!canSubmit) return;
+
+        isSubmitting = true;
+        const created = address;
         try {
-            const [tab] = await chrome.tabs.query({
-                active: true,
-                lastFocusedWindow: true
-            });
-
-            if (tab?.url) {
-                aliasName = cleanDomainName(tab.url);
-                // Optionnel : ajouter un suffixe aléatoire pour plus d'unicité
-                // aliasName += Math.floor(Math.random() * 1000);
-            }
+            await mailcowService.createAlias(created, mailbox);
+            settings.save({ lastDomain: domain, lastMailbox: mailbox }).catch(() => {});
+            lastCreated = created;
+            localPart = '';
+            notifications.success(await copy(created)
+                ? 'Alias créé et copié dans le presse-papier !'
+                : 'Alias créé (copie impossible, utilise le bouton)');
         } catch (error) {
-            console.error('Error getting current tab:', error);
-            notifications.add('Impossible de récupérer l\'URL du site', 'error');
-        }
-    }
-
-    async function loadData() {
-        isLoading = true;
-        try {
-            await Promise.all([
-                mailcowService.loadDomains(),
-                mailcowService.loadMailboxes(),
-                getCurrentTab()
-            ]);
-
-            // Sélectionne le premier domaine par défaut
-            if ($domains.length > 0 && !selectedDomain) {
-                selectedDomain = $domains[0];
-            }
-
-            // Optionnel : Sélectionne la première boîte mail par défaut
-            if ($mailboxes.length > 0 && !selectedMailbox) {
-                selectedMailbox = $mailboxes[0];
-            }
-        } catch (error) {
-            notifications.add('Erreur lors du chargement des données', 'error');
+            notifications.error(error.message);
         } finally {
-            isLoading = false;
+            isSubmitting = false;
+            aliasInput.focus();
         }
     }
-
-    async function handleSubmit() {
-        if (!aliasName || !selectedDomain || !selectedMailbox) {
-            notifications.add('Veuillez remplir tous les champs', 'error');
-            return;
-        }
-
-        try {
-            await mailcowService.createAlias(aliasName, selectedDomain, selectedMailbox);
-            // Copie l'alias complet
-            const fullAlias = `${aliasName}@${selectedDomain}`;
-            lastCreatedAlias = fullAlias;
-            await copyToClipboard(fullAlias);
-
-            // Optionnel : ajoute une classe temporaire pour un effet visuel
-            const form = document.querySelector('form');
-            form.classList.add('copied');
-            setTimeout(() => form.classList.remove('copied'), 500);
-
-            // Reset du formulaire
-            aliasName = '';
-        } catch (error) {
-            console.error('Error creating alias:', error);
-        }
-    }
-
-    onMount(loadData);
 </script>
 
-<div class="p-4">
-    {#if isLoading}
-        <div class="flex justify-center p-4">
-            <span class="loading loading-spinner loading-md"></span>
+<form onsubmit={handleSubmit} class="space-y-3">
+    <label class="form-control">
+        <div class="label pt-0">
+            <span class="label-text">Alias</span>
+            {#if refreshing}
+                <span class="label-text-alt loading loading-spinner loading-xs" title="Actualisation…"></span>
+            {/if}
         </div>
-    {:else}
-        <form on:submit|preventDefault={handleSubmit} class="space-y-4">
-            <div class="flex items-center gap-2">
-                <div class="form-control flex-1">
-                    <input
-                            type="text"
-                            bind:value={aliasName}
-                            placeholder="alias"
-                            class="input input-bordered w-full"
-                            required
-                    />
-                </div>
-                <span class="text-lg">@</span>
-                <div class="form-control flex-1">
-                    <select
-                            bind:value={selectedDomain}
-                            class="select select-bordered w-full"
-                            required
-                    >
-                        <option value="">Domaine</option>
-                        {#each $domains as domain}
-                            <option value={domain}>{domain}</option>
-                        {/each}
-                    </select>
-                </div>
-            </div>
+        <div class="join w-full">
+            <input
+                bind:this={aliasInput}
+                bind:value={localPart}
+                type="text"
+                placeholder="nom-du-site"
+                class="input input-bordered join-item min-w-0 flex-1"
+                autocomplete="off"
+                spellcheck="false"
+                required
+            />
+            <span class="join-item flex items-center border border-base-content/20 bg-base-200 px-2">@</span>
+            <select bind:value={domain} class="select select-bordered join-item min-w-0 max-w-[50%]" aria-label="Domaine">
+                {#each domains as option (option)}
+                    <option value={option}>{option}</option>
+                {/each}
+            </select>
+        </div>
+    </label>
 
-            <div class="form-control">
-                <select
-                        bind:value={selectedMailbox}
-                        class="select select-bordered w-full"
-                        required
-                >
-                    <option value="">Boîte mail</option>
-                    {#each $mailboxes as mailbox}
-                        <option value={mailbox}>{mailbox}</option>
-                    {/each}
-                </select>
-            </div>
+    <label class="form-control">
+        <div class="label pt-0">
+            <span class="label-text">Redirigé vers</span>
+        </div>
+        <select bind:value={mailbox} class="select select-bordered w-full">
+            {#each mailboxes as option (option)}
+                <option value={option}>{option}</option>
+            {/each}
+        </select>
+    </label>
 
-            <button
-                    type="submit"
-                    class="btn btn-primary w-full"
-                    disabled={!aliasName || !selectedDomain || !selectedMailbox}
-            >
-                Créer l'alias
-            </button>
-        </form>
-        {#if lastCreatedAlias}
-            <div class="mt-4 p-4 bg-base-200 rounded-lg flex items-center justify-between">
-                <span class="font-mono">{lastCreatedAlias}</span>
-                <button
-                        class="btn btn-ghost btn-sm"
-                        on:click={() => copyToClipboard(lastCreatedAlias)}
-                >
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-2M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
-                    </svg>
-                </button>
-            </div>
+    <button type="submit" class="btn btn-primary w-full" disabled={!canSubmit}>
+        {#if isSubmitting}
+            <span class="loading loading-spinner loading-sm"></span>
         {/if}
-    {/if}
-</div>
+        Créer l'alias
+    </button>
+</form>
+
+{#if lastCreated}
+    <div class="mt-4 flex items-center justify-between gap-2 rounded-lg bg-base-200 p-3">
+        <span class="truncate font-mono text-sm" title={lastCreated}>{lastCreated}</span>
+        <button
+            class="btn btn-ghost btn-sm btn-square"
+            onclick={() => copy(lastCreated)}
+            aria-label="Copier l'alias"
+            title="Copier"
+        >
+            {#if justCopied}
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-success" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                </svg>
+            {:else}
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                </svg>
+            {/if}
+        </button>
+    </div>
+{/if}

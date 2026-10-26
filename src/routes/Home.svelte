@@ -1,27 +1,86 @@
 <script>
-    import { isConfigured } from '../services/settings.service.js';
-    import { push } from 'svelte-spa-router';
+    import { onMount } from 'svelte';
     import AliasForm from '../components/AliasForm.svelte';
+    import { settings } from '../services/settings.service.js';
+    import { mailcowService } from '../services/mailcow.service.js';
+    import { notifications } from '../services/notification.service.js';
+    import { hasOriginAccess, requestOriginAccess } from '../lib/browser.js';
+
+    let { onOpenSettings } = $props();
+
+    /** @type {'loading' | 'needs-access' | 'ready' | 'error'} */
+    let status = $state('loading');
+    let refreshing = $state(false);
+    let error = $state('');
+    let domains = $state([]);
+    let mailboxes = $state([]);
+
+    const serverHost = $derived(new URL($settings.mailcowUrl).host);
+
+    async function load() {
+        // Show the last known lists right away, then refresh them.
+        const cached = await mailcowService.getCachedLists();
+        if (cached) {
+            ({ domains, mailboxes } = cached);
+            status = 'ready';
+        }
+
+        if (!(await hasOriginAccess($settings.mailcowUrl))) {
+            status = 'needs-access';
+            return;
+        }
+
+        refreshing = true;
+        try {
+            ({ domains, mailboxes } = await mailcowService.loadLists());
+            status = 'ready';
+        } catch (e) {
+            error = e.message;
+            if (cached) notifications.error(e.message);
+            else status = 'error';
+        } finally {
+            refreshing = false;
+        }
+    }
+
+    async function grantAccess() {
+        if (await requestOriginAccess($settings.mailcowUrl)) {
+            status = 'loading';
+            await load();
+        } else {
+            notifications.error('Accès refusé : l\'extension ne peut pas contacter le serveur');
+        }
+    }
+
+    onMount(load);
 </script>
 
-{#if $isConfigured}
-    <div class="p-4">
-        <h2 class="text-xl font-bold mb-4">Créer un alias</h2>
-        <AliasForm />
-    </div>
-{:else}
-    <div class="p-4">
-        <div class="alert alert-warning">
-            <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-            </svg>
-            <div>
-                <h3 class="font-bold">Configuration requise !</h3>
-                <div class="text-sm">Veuillez configurer vos paramètres Mailcow.</div>
-            </div>
-            <button class="btn btn-sm" on:click={() => push('/settings')}>
-                Configurer
-            </button>
+<div class="p-4">
+    {#if status === 'loading'}
+        <div class="flex justify-center p-6">
+            <span class="loading loading-spinner loading-md"></span>
         </div>
-    </div>
-{/if}
+    {:else if status === 'needs-access'}
+        <div class="space-y-3 text-sm">
+            <p>L'extension a besoin de ton autorisation pour contacter <strong>{serverHost}</strong>.</p>
+            <button class="btn btn-primary w-full" onclick={grantAccess}>Autoriser l'accès</button>
+        </div>
+    {:else if status === 'error'}
+        <div class="space-y-3">
+            <div role="alert" class="alert alert-error text-sm">{error}</div>
+            <div class="flex gap-2">
+                <button class="btn flex-1" onclick={load} disabled={refreshing}>
+                    {#if refreshing}<span class="loading loading-spinner loading-sm"></span>{/if}
+                    Réessayer
+                </button>
+                <button class="btn btn-ghost flex-1" onclick={onOpenSettings}>Paramètres</button>
+            </div>
+        </div>
+    {:else if domains.length === 0 || mailboxes.length === 0}
+        <div role="alert" class="alert alert-warning text-sm">
+            Aucun {domains.length === 0 ? 'domaine' : 'boîte mail'} actif sur ce serveur Mailcow.
+        </div>
+    {:else}
+        <AliasForm {domains} {mailboxes} {refreshing} />
+    {/if}
+</div>
