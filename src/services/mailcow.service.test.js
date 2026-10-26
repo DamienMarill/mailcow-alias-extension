@@ -25,8 +25,10 @@ afterEach(() => {
 describe('createAlias', () => {
     it('reports Mailcow failures sent with HTTP 200', async () => {
         vi.stubGlobal('fetch', respond([{ type: 'danger', log: [], msg: ['is_alias_or_mailbox', 'a@b.dev'] }]))
-        await expect(mailcowService.createAlias('a@b.dev', 'me@b.dev'))
-            .rejects.toThrow(new MailcowError('a@b.dev existe déjà (alias ou boîte mail)'))
+        const error = await mailcowService.createAlias('a@b.dev', 'me@b.dev').catch(e => e)
+        expect(error).toBeInstanceOf(MailcowError)
+        expect(error.message).toBe('a@b.dev existe déjà (alias ou boîte mail)')
+        expect(error.isAlreadyTaken).toBe(true)
     })
 
     it('sends the API key and the alias', async () => {

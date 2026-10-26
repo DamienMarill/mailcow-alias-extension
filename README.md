@@ -7,6 +7,12 @@ Extension Chrome / Firefox pour créer en un clic un alias [Mailcow](https://mai
 - Suffixe aléatoire optionnel (`amazon.k3x9q`) pour des alias impossibles à deviner, ou à la demande avec le bouton dé.
 - Remplissage des champs « email » / « confirmer l'email » de la page, compatible React, Vue, Angular, Shadow DOM
   et iframes (le formulaire d'inscription passe avant la newsletter du pied de page).
+- Liste des alias déjà créés pour le site (par nom ou par commentaire) : copier, remplir la page,
+  désactiver/réactiver ou supprimer.
+- Chaque alias garde en commentaire privé Mailcow le site pour lequel il a été créé : le jour où il reçoit
+  du spam, tu sais qui a fuité.
+- Clic droit sur un champ → « Créer un alias Mailcow ici » : alias créé avec tes choix habituels et
+  champ rempli, sans ouvrir le popup (suffixe ajouté automatiquement si le nom est déjà pris).
 - Domaine et boîte de destination mémorisés d'une utilisation à l'autre.
 - Listes mises en cache : le popup s'affiche tout de suite et se rafraîchit en arrière-plan.
 - Erreurs Mailcow lisibles (alias déjà existant, clé API refusée, serveur injoignable…).
@@ -23,7 +29,8 @@ Cette clé donne un accès administrateur complet au serveur : limite les IP aut
 | Permission | Pourquoi |
 |---|---|
 | accès au serveur Mailcow | demandé à l'enregistrement des paramètres, **pour ce seul serveur** |
-| `activeTab` + `scripting` | lire l'URL du site et remplir ses champs email, uniquement quand tu ouvres le popup |
+| `activeTab` + `scripting` | lire l'URL du site et remplir ses champs, uniquement quand tu ouvres le popup ou utilises le menu |
+| `contextMenus` | entrée « Créer un alias Mailcow ici » du clic droit |
 | `clipboardWrite` | copier l'alias même après l'appel à l'API |
 | `storage` | paramètres et préférences |
 
@@ -38,7 +45,12 @@ npm run dev:firefox    # build en watch dans dist/firefox
 npm run start:firefox  # lance un Firefox de test avec l'extension (à côté de dev:firefox)
 npm run check          # vérification des types (svelte-check)
 npm test               # tests unitaires (Vitest)
+npm run test:e2e       # tests de bout en bout (Playwright + Chromium, faux serveur Mailcow)
 ```
+
+Les tests E2E tournent sur un build dédié (`vite build --mode e2e` → `dist/e2e`) qui pré-autorise
+`http://localhost` et expose le handler du menu contextuel (impossible à cliquer depuis Playwright).
+Première fois : `npx playwright install chromium`.
 
 Charger l'extension :
 
@@ -70,6 +82,6 @@ npm version minor      # met à jour package.json et package-lock.json (sans tag
 git commit -am "build: v1.3.0" && git push
 ```
 
-Le workflow `Release` crée alors le tag `v1.3.0` et une release GitHub avec les deux zips.
-Il ne fait rien si la release de cette version existe déjà. Le workflow `CI` vérifie chaque PR
-(types, tests, build, lint AMO).
+Le workflow `CI` (types, tests unitaires, build, lint AMO, tests E2E) tourne sur chaque PR et sur `main`.
+Quand il est vert sur `main`, le workflow `Release` crée le tag `v1.3.0` et une release GitHub avec les
+deux zips, s'il n'existe pas encore de release pour cette version.

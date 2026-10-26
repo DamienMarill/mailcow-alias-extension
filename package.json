@@ -1,7 +1,7 @@
 {
   "name": "mailcow-alias-extension",
   "private": true,
-  "version": "1.2.0",
+  "version": "2.0.0",
   "type": "module",
   "scripts": {
     "build": "npm run build:chrome && npm run build:firefox",
@@ -13,12 +13,16 @@
     "lint:firefox": "npm run build:firefox && web-ext lint --source-dir dist/firefox",
     "check": "svelte-check",
     "zip": "npm run build && web-ext build -s dist/chrome -a release -n mailcow-alias-{version}-chrome.zip -o && web-ext build -s dist/firefox -a release -n mailcow-alias-{version}-firefox.zip -o",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:e2e": "vite build --mode e2e && playwright test"
   },
   "devDependencies": {
+    "@playwright/test": "^1.64.1",
     "@sveltejs/vite-plugin-svelte": "^7.3.1",
     "@tailwindcss/vite": "^4.3.3",
     "daisyui": "^5.7.50",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
     "svelte": "^5.57.2",
     "svelte-check": "^4.7.7",
     "tailwindcss": "^4.3.3",

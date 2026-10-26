@@ -1,10 +1,12 @@
 <script>
     import { onMount } from 'svelte';
     import AliasForm from '../components/AliasForm.svelte';
+    import SiteAliases from '../components/SiteAliases.svelte';
     import { settings } from '../services/settings.service.js';
     import { mailcowService } from '../services/mailcow.service.js';
     import { notifications } from '../services/notification.service.js';
-    import { hasOriginAccess, requestOriginAccess } from '../lib/browser.js';
+    import { getActiveTab, hasOriginAccess, requestOriginAccess } from '../lib/browser.js';
+    import { getSite } from '../lib/site.js';
 
     let { onOpenSettings } = $props();
 
@@ -14,10 +16,34 @@
     let error = $state('');
     let domains = $state([]);
     let mailboxes = $state([]);
+    /** @type {import('../services/mailcow.service.js').Alias[]} */
+    let aliases = $state([]);
+    let aliasesLoading = $state(false);
+    /** Alias created from this popup, shown first in the list. */
+    let justCreated = $state('');
+    /** @type {number | null} */
+    let tabId = $state(null);
+    /** @type {import('../lib/site.js').Site | null} */
+    let site = $state(null);
 
     const serverHost = $derived(new URL($settings.mailcowUrl).host);
 
+    async function loadAliases() {
+        aliasesLoading = true;
+        try {
+            aliases = await mailcowService.listAliases();
+        } catch (e) {
+            notifications.error(`Liste des alias indisponible : ${e.message}`);
+        } finally {
+            aliasesLoading = false;
+        }
+    }
+
     async function load() {
+        const tab = await getActiveTab();
+        tabId = tab?.id ?? null;
+        site = getSite(tab?.url ?? '');
+
         // Show the last known lists right away, then refresh them.
         const cached = await mailcowService.getCachedLists();
         if (cached) {
@@ -29,6 +55,8 @@
             status = 'needs-access';
             return;
         }
+        // Aliases change from anywhere (Mailcow UI, context menu): never cached.
+        loadAliases();
         if (cached?.isFresh) return;
 
         refreshing = true;
@@ -51,6 +79,11 @@
         } else {
             notifications.error('Accès refusé : l\'extension ne peut pas contacter le serveur');
         }
+    }
+
+    function handleCreated(address) {
+        justCreated = address;
+        loadAliases();
     }
 
     onMount(load);
@@ -82,6 +115,14 @@
             Aucun {domains.length === 0 ? 'domaine' : 'boîte mail'} actif sur ce serveur Mailcow.
         </div>
     {:else}
-        <AliasForm {domains} {mailboxes} {refreshing} />
+        <AliasForm {domains} {mailboxes} {refreshing} {tabId} {site} onCreated={handleCreated} />
+        <SiteAliases
+            bind:aliases
+            {site}
+            {tabId}
+            highlight={justCreated}
+            canFill={tabId !== null && $settings.autofillEnabled}
+            loading={aliasesLoading}
+        />
     {/if}
 </div>

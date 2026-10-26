@@ -14,16 +14,32 @@ const MESSAGES = {
     access_denied: () => 'Accès refusé : la clé API est-elle en lecture/écriture ?',
 };
 
-export class MailcowError extends Error {}
+// Mailcow limits comments to 160 characters.
+const COMMENT_MAX_LENGTH = 160;
 
-function describe(msg) {
+export class MailcowError extends Error {
+    /**
+     * @param {string} message
+     * @param {string} [code] Mailcow message key, e.g. "is_alias_or_mailbox"
+     */
+    constructor(message, code) {
+        super(message);
+        this.code = code;
+    }
+
+    get isAlreadyTaken() {
+        return this.code === 'is_alias_or_mailbox' || this.code === 'is_alias';
+    }
+}
+
+function toError(msg) {
     const [key, ...args] = [msg].flat().map(String);
-    return MESSAGES[key]?.(...args) ?? `Mailcow : ${[key, ...args].join(' ')}`;
+    return new MailcowError(MESSAGES[key]?.(...args) ?? `Mailcow : ${[key, ...args].join(' ')}`, key);
 }
 
 /**
  * @param {string} endpoint
- * @param {{ method?: string, body?: object }} [options]
+ * @param {{ method?: string, body?: object | string[] }} [options]
  */
 async function request(endpoint, { method = 'GET', body } = {}) {
     const { mailcowUrl, apiKey } = getCredentials();
@@ -62,7 +78,7 @@ async function request(endpoint, { method = 'GET', body } = {}) {
     // Mailcow reports failed actions with HTTP 200 and a "danger"/"error" entry.
     const failure = [data].flat().find(entry =>
         entry && 'msg' in entry && (entry.type === 'danger' || entry.type === 'error'));
-    if (failure) throw new MailcowError(describe(failure.msg));
+    if (failure) throw toError(failure.msg);
 
     return data;
 }
@@ -70,6 +86,18 @@ async function request(endpoint, { method = 'GET', body } = {}) {
 // Mailboxes can be "active: 2" (receive only), still a valid alias target.
 const isActive = (item) => Number(item.active) !== 0;
 const sorted = (values) => values.sort((a, b) => a.localeCompare(b));
+
+/**
+ * @typedef {{ id: string, address: string, goto: string, active: boolean, comment: string }} Alias
+ * @returns {Alias}
+ */
+const toAlias = (item) => ({
+    id: String(item.id),
+    address: item.address,
+    goto: item.goto ?? '',
+    active: Number(item.active_int ?? item.active) === 1,
+    comment: item.private_comment ?? '',
+});
 
 export const mailcowService = {
     async loadLists() {
@@ -95,14 +123,44 @@ export const mailcowService = {
         return { ...listCache, isFresh: Date.now() - (listCache.fetchedAt ?? 0) < CACHE_FRESH_MS };
     },
 
+    /** @returns {Promise<Alias[]>} every alias of the server, catch-alls excluded */
+    async listAliases() {
+        const data = await request('get/alias/all');
+        return [data].flat()
+            .filter(item => item?.address && Number(item.is_catch_all) !== 1)
+            .map(toAlias);
+    },
+
     /**
      * @param {string} address
      * @param {string} goto
+     * @param {{ comment?: string }} [options] comment: private note shown in Mailcow
      */
-    createAlias(address, goto) {
+    createAlias(address, goto, { comment = '' } = {}) {
         return request('add/alias', {
             method: 'POST',
-            body: { address, goto, active: 1 },
+            body: {
+                address,
+                goto,
+                active: 1,
+                ...(comment && { private_comment: comment.slice(0, COMMENT_MAX_LENGTH) }),
+            },
         });
+    },
+
+    /**
+     * @param {string} id
+     * @param {boolean} active
+     */
+    setAliasActive(id, active) {
+        return request('edit/alias', {
+            method: 'POST',
+            body: { items: [id], attr: { active: active ? '1' : '0' } },
+        });
+    },
+
+    /** @param {string} id */
+    deleteAlias(id) {
+        return request('delete/alias', { method: 'POST', body: [id] });
     },
 };

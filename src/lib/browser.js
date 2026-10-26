@@ -1,4 +1,5 @@
 import { fillEmailFields } from '../content/fill-email-fields.js'
+import { showPageToast } from '../content/page-toast.js'
 
 // Cross-browser access to the WebExtension APIs: Firefox exposes the promise
 // based `browser` namespace, Chrome MV3 returns promises from `chrome`.
@@ -51,31 +52,54 @@ export async function getActiveTab() {
  * fills the frame holding the most relevant form only.
  * @param {number} tabId
  * @param {string} address
- * @param {{ dryRun?: boolean }} [options] dryRun: only count the fields
+ * @param {{ dryRun?: boolean, frameId?: number }} [options]
+ *   dryRun: only count the fields;
+ *   frameId: fill this frame, including its focused field (context menu)
  * @returns {Promise<number>} number of fields found (dryRun) or filled
  */
-export async function fillEmailFieldsInTab(tabId, address, { dryRun = false } = {}) {
+export async function fillEmailFieldsInTab(tabId, address, { dryRun = false, frameId } = {}) {
     if (!ext?.scripting) return 0
+    // Only a right-clicked field is a deliberate target: from the popup, the
+    // page's focused field may be any text field.
+    const includeFocused = frameId !== undefined
     try {
-        const scans = await ext.scripting.executeScript({
-            target: { tabId, allFrames: true },
-            func: fillEmailFields,
-            args: [address, true],
-        })
-        const best = scans
-            .filter(scan => scan.result?.score > 0)
-            .sort((a, b) => b.result.score - a.result.score)[0]
-        if (!best || dryRun) return best?.result.count ?? 0
+        if (frameId === undefined) {
+            const scans = await ext.scripting.executeScript({
+                target: { tabId, allFrames: true },
+                func: fillEmailFields,
+                args: [address, { dryRun: true }],
+            })
+            const best = scans
+                .filter(scan => scan.result?.score > 0)
+                .sort((a, b) => b.result.score - a.result.score)[0]
+            if (!best || dryRun) return best?.result.count ?? 0
+            frameId = best.frameId
+        }
 
         const [fill] = await ext.scripting.executeScript({
-            target: { tabId, frameIds: [best.frameId] },
+            target: { tabId, frameIds: [frameId] },
             func: fillEmailFields,
-            args: [address, false],
+            args: [address, { includeFocused }],
         })
         return fill?.result?.filled ?? 0
     } catch {
         // Pages where extensions can't run: browser pages, extension stores…
         return 0
+    }
+}
+
+/**
+ * Shows a short message at the bottom of the page (context menu feedback,
+ * where no popup is open).
+ * @param {number} tabId
+ * @param {string} message
+ * @param {'success' | 'error'} type
+ */
+export async function showToastInTab(tabId, message, type) {
+    try {
+        await ext.scripting.executeScript({ target: { tabId }, func: showPageToast, args: [message, type] })
+    } catch {
+        // Nothing to show it in.
     }
 }
 

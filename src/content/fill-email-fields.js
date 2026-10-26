@@ -8,10 +8,13 @@
  * scripts register the change.
  *
  * @param {string} value
- * @param {boolean} dryRun only score the frame, used to pick the best frame
+ * @param {{ dryRun?: boolean, includeFocused?: boolean }} [options]
+ *   dryRun: only score the frame, used to pick the best frame;
+ *   includeFocused: also fill the focused field even if it doesn't look like
+ *   an email field (the user right-clicked it to get an alias)
  * @returns {{ score: number, count: number, filled: number }}
  */
-export function fillEmailFields(value, dryRun) {
+export function fillEmailFields(value, { dryRun = false, includeFocused = false } = {}) {
     const EMAIL_HINT = /e[-_. ]?mail|courriel|\bm[ée]l\b|correo|e-?post/i
     const CONFIRM_HINT = /confirm|verif|repeat|retype|again|re-?enter|r[ée]p[ée]t|ressaisi|wiederhol|mail[-_]?2\b/i
     const NEWSLETTER_HINT = /newsletter|subscribe|abonne|infolettre/i
@@ -53,10 +56,14 @@ export function fillEmailFields(value, dryRun) {
         return input.getClientRects().length > 0 && getComputedStyle(input).visibility !== 'hidden'
     }
 
+    function isFillable(input) {
+        const type = (input.getAttribute('type') ?? '').toLowerCase()
+        return TEXT_TYPES.has(type) && !input.disabled && !input.readOnly && isVisible(input)
+    }
+
     function isEmailField(input) {
         const type = (input.getAttribute('type') ?? '').toLowerCase()
-        if (!TEXT_TYPES.has(type) || input.disabled || input.readOnly || !isVisible(input)) return false
-        if (input.closest('[role=search]')) return false
+        if (!isFillable(input) || input.closest('[role=search]')) return false
         const text = describe(input)
         if (type === 'email') return !SEARCH_HINT.test(text)
         return EMAIL_HINT.test(text) && !SEARCH_HINT.test(text)
@@ -78,6 +85,12 @@ export function fillEmailFields(value, dryRun) {
     }
 
     const focused = deepActiveElement()
+    if (includeFocused && focused instanceof HTMLInputElement && isFillable(focused)) {
+        const key = focused.form ?? null
+        if (!groups.has(key)) groups.set(key, [])
+        if (!groups.get(key).includes(focused)) groups.get(key).push(focused)
+    }
+
     let best = { score: 0, fields: [] }
     for (const [form, fields] of groups) {
         let score = fields.length

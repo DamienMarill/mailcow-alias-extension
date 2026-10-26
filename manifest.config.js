@@ -14,8 +14,9 @@ const icons = {
 /**
  * @param {'chrome' | 'firefox'} target
  * @param {string} version
+ * @param {{ e2e?: boolean }} [options] e2e: end-to-end test build
  */
-export function createManifest(target, version) {
+export function createManifest(target, version, { e2e = false } = {}) {
     // Stores only accept 1 to 4 dot-separated integers (no "-beta" suffix).
     if (!/^\d+(\.\d+){0,3}$/.test(version)) {
         throw new Error(`Invalid extension version "${version}": use digits and dots only`)
@@ -33,7 +34,8 @@ export function createManifest(target, version) {
             default_icon: icons,
         },
         // activeTab + scripting: fill the email fields of the current page on demand.
-        permissions: ['storage', 'activeTab', 'scripting', 'clipboardWrite'],
+        // contextMenus: "create an alias here" on the page's fields.
+        permissions: ['storage', 'activeTab', 'scripting', 'clipboardWrite', 'contextMenus'],
         // Access is requested at runtime for the configured Mailcow server only.
         optional_host_permissions: ['https://*/*', 'http://*/*'],
         commands: {
@@ -42,6 +44,16 @@ export function createManifest(target, version) {
                 description: 'Ouvrir Mailcow Alias',
             },
         },
+    }
+
+    // Chrome only runs service workers, Firefox only event pages.
+    manifest.background = target === 'firefox'
+        ? { scripts: ['background.js'], type: 'module' }
+        : { service_worker: 'background.js', type: 'module' }
+
+    if (e2e) {
+        // Pre-granted for the local mock server: permission prompts can't be clicked in tests.
+        manifest.host_permissions = ['http://localhost/*']
     }
 
     if (target === 'firefox') {
